@@ -1,0 +1,41 @@
+{
+  "model_name": "gpt-4o-mini",
+  "parameter_size": "~8B",
+  "framework": "pure-python + openai (not used in main pipeline)",
+  "runtime": "Python 3.11",
+  "pipeline_type": "deterministic rule-based multi-agent",
+  "agents": {
+    "coordinator": {
+      "role": "orchestration",
+      "implementation": "rule-based",
+      "model": null
+    },
+    "order_seller_agent": {
+      "role": "order status and item analysis",
+      "implementation": "pure-python + pandas CSV lookup",
+      "model": null
+    },
+    "payment_agent": {
+      "role": "payment reconciliation",
+      "implementation": "pure-python arithmetic",
+      "model": null
+    },
+    "delivery_agent": {
+      "role": "delivery timestamp comparison",
+      "implementation": "pure-python datetime comparison",
+      "model": null
+    },
+    "policy_agent": {
+      "role": "EC_POLICY_V1 rule application",
+      "implementation": "priority-ordered rule engine",
+      "model": null
+    },
+    "verifier_agent": {
+      "role": "output schema validation",
+      "implementation": "regex + type checking",
+      "model": null
+    }
+  },
+  "policy_version": "EC_POLICY_V1",
+  "dataset": "Olist Brazilian E-Commerce Public Dataset"
+}
