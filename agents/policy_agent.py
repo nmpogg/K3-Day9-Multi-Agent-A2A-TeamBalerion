@@ -50,13 +50,14 @@ ISSUE_TO_ACTIONS = {
 }
 
 # Confidence by clarity of evidence
+# All decisions are deterministic: direct timestamp/status/arithmetic from CSV
 ISSUE_TO_CONFIDENCE = {
-    "canceled_order_paid": 0.98,
-    "unavailable_order_paid": 0.98,
-    "late_delivery_seller": 0.95,
-    "late_delivery_logistics": 0.93,
-    "valid_split_payment": 0.90,
-    "unsupported_late_claim": 0.85,
+    "canceled_order_paid": 0.99,      # order_status field is direct, unambiguous
+    "unavailable_order_paid": 0.99,   # order_status field is direct, unambiguous
+    "late_delivery_seller": 0.98,     # carrier_date > shipping_limit is direct comparison
+    "late_delivery_logistics": 0.97,  # carrier_date <= shipping_limit + delivered > estimated
+    "valid_split_payment": 0.96,      # arithmetic reconciliation, diff typically = 0
+    "unsupported_late_claim": 0.95,   # delivered < estimated is direct comparison
 }
 
 
@@ -84,12 +85,13 @@ def apply_policy(
     total_pay = payment.total_payment_brl
     freight = payment.freight_total_brl
 
-    def _make(issue: str, party_type, party_id, refund: float) -> PolicyDecision:
+    def _make(issue: str, party_type, party_id, refund: float, conf_override: float = None) -> PolicyDecision:
+        conf = conf_override if conf_override is not None else ISSUE_TO_CONFIDENCE[issue]
         return PolicyDecision(
             primary_issue=issue,
             root_cause_code=ISSUE_TO_ROOT_CAUSE[issue],
             case_status=ISSUE_TO_STATUS[issue],
-            confidence=ISSUE_TO_CONFIDENCE[issue],
+            confidence=round(conf, 2),
             responsible_party_type=party_type,
             responsible_party_id=party_id,
             recommended_refund_brl=round(refund, 2),
@@ -115,7 +117,22 @@ def apply_policy(
 
     # --- Rule 5: valid split payment ---
     if payment.is_split and payment.is_reconciled:
-        return _make("valid_split_payment", None, None, 0.0)
+        # diff=0.00 is more confident than diff near 0.10
+        item_freight_sum = round(payment.item_total_brl + payment.freight_total_brl, 2)
+        diff = abs(payment.total_payment_brl - item_freight_sum)
+        # confidence 0.99 when perfect match, 0.96 when near tolerance
+        split_conf = round(max(0.96, 0.99 - diff * 0.5), 2)
+        return _make("valid_split_payment", None, None, 0.0, conf_override=split_conf)
 
     # --- Rule 6: fallback / unsupported ---
-    return _make("unsupported_late_claim", None, None, 0.0)
+    # Confidence scales with how far delivery was from being late
+    delivered = order.delivered_customer_date
+    estimated = order.estimated_delivery_date
+    if delivered and estimated and delivered < estimated:
+        days_early = (estimated - delivered).days
+        # More days early = more confident the claim is invalid
+        # 0 days early = 0.95, 30+ days early = 0.99
+        unsup_conf = round(min(0.99, 0.95 + days_early * 0.002), 2)
+    else:
+        unsup_conf = ISSUE_TO_CONFIDENCE["unsupported_late_claim"]
+    return _make("unsupported_late_claim", None, None, 0.0, conf_override=unsup_conf)

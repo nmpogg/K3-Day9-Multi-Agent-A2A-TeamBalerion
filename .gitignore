@@ -3,5 +3,4 @@ PLAN.md
 .venv/
 input/
 output/
-output.zip
 __pycache__/
