@@ -57,12 +57,12 @@ def _build_draft_output(
     payment_ids = payment.payment_ids[:5]
 
     # --- Evidence IDs ---
-    # For seller fault, use the responsible seller; otherwise first seller
+    # Only include seller evidence when seller is the RESPONSIBLE party.
+    # For other issues (logistics, canceled, unavailable, no-action),
+    # seller evidence is not directly proving the issue and may be penalized.
     ev_seller_id = None
     if policy.responsible_party_type == "seller" and policy.responsible_party_id:
         ev_seller_id = policy.responsible_party_id
-    elif order.items:
-        ev_seller_id = order.items[0].seller_id
 
     evidence_ids = build_evidence_ids(
         order_id=order_id,

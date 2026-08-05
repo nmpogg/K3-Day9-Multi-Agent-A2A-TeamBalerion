@@ -43,33 +43,44 @@ def build_evidence_ids(
     seller_id: Optional[str],
     root_cause_code: str,
 ) -> List[str]:
-    """Build evidence IDs list. Max 10 total. Only real IDs from data."""
-    ids: List[str] = []
+    """Build evidence IDs list. Max 10 total. Only real IDs from data.
 
-    # order evidence (always first)
-    ids.append(f"order:{order_id}")
+    Priority order to ensure the most important evidence is always included:
+      1. order:X          (always required)
+      2. policy:X         (always required — must never be cut by 10-cap)
+      3. seller:X         (only if seller is responsible party, passed by coordinator)
+      4. payment:X:N      (payment records)
+      5. item:X:N         (item records)
+    """
+    MAX = 10
 
-    # item evidence (max 5) — ItemInfo is a dataclass, use attribute access
-    for item in items[:5]:
-        item_id = int(item.order_item_id)
-        ids.append(f"item:{order_id}:{item_id}")
-
-    # payment evidence (fill remaining slots up to max 10 - 1 for policy)
-    max_payments = max(0, 8 - len(items[:5]))
-    for pay in payments[:max_payments]:
-        seq = int(pay.get("payment_sequential", 0))
-        ids.append(f"payment:{order_id}:{seq}")
-
-    # seller evidence
-    if seller_id:
-        ids.append(f"seller:{seller_id}")
-
-    # policy evidence (always last)
+    # GUARANTEED entries — must always be present
+    guaranteed = [f"order:{order_id}"]
     if root_cause_code in VALID_ROOT_CAUSE_CODES:
-        ids.append(f"policy:{root_cause_code}")
+        guaranteed.append(f"policy:{root_cause_code}")
 
-    # cap at 10
-    return ids[:10]
+    # OPTIONAL entries — fill remaining slots in priority order
+    optional: List[str] = []
+
+    # Seller evidence (only if seller is responsible — controlled by caller)
+    if seller_id:
+        optional.append(f"seller:{seller_id}")
+
+    # Payment evidence — important for proving financial transactions
+    for pay in payments:
+        seq = int(pay.get("payment_sequential", 0))
+        optional.append(f"payment:{order_id}:{seq}")
+
+    # Item evidence
+    for item in items:
+        item_id = int(item.order_item_id)
+        optional.append(f"item:{order_id}:{item_id}")
+
+    # Fill up to MAX, guaranteed entries always included
+    remaining = MAX - len(guaranteed)
+    result = guaranteed + optional[:remaining]
+
+    return result[:MAX]
 
 
 def validate_evidence_ids(ids: List[str]) -> List[str]:
